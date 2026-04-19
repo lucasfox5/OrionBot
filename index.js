@@ -1049,6 +1049,7 @@ client.on("messageCreate", async (message) => {
 
   const args = message.content.trim().split(/\s+/);
   const cmd = args[0].toLowerCase();
+});
 
   // ----------------------------------------------------
   // COUNTING SYSTEM
@@ -1276,106 +1277,84 @@ client.on("messageCreate", async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-if (command === "review") {
+// ⭐ !review COMMAND
+if (cmd === "review") {
   try {
     await message.delete().catch(() => {});
 
-    const dm = await message.author.createDM().catch(() => null);
-    if (!dm) return message.reply("I cannot DM you. Enable DMs and try again.");
+    const dm = await message.author.createDM();
 
     const ask = async (question, timeout = 60000) => {
-      try {
-        await dm.send(question);
+      await dm.send(question);
 
-        const collected = await dm.awaitMessages({
-          max: 1,
-          time: timeout,
-          filter: m => m.author.id === message.author.id
-        });
+      const collected = await dm.awaitMessages({
+        max: 1,
+        time: timeout,
+        filter: m => m.author.id === message.author.id
+      });
 
-        if (!collected.size) return null;
-        return collected.first();
-      } catch (err) {
-        console.error("ask error:", err);
-        return null;
-      }
+      if (!collected.size) throw new Error("Timed out");
+      return collected.first();
     };
 
-    await dm.send("Starting review setup.");
+    await dm.send("Let's create your review.");
 
-    const productNameMsg = await ask("What is the product name?");
-    if (!productNameMsg) return dm.send("Timed out.");
-    const product_name = productNameMsg.content;
+    const product_name = (await ask("What is the product name?")).content;
 
     const productMsg = await ask("Product? (or type skip)");
-    if (!productMsg) return dm.send("Timed out.");
     const product =
       productMsg.content.toLowerCase() === "skip"
         ? "Unknown"
         : productMsg.content;
 
     const priceMsg = await ask("Price? (or type skip)");
-    if (!priceMsg) return dm.send("Timed out.");
     const price =
       priceMsg.content.toLowerCase() === "skip"
         ? "Unknown"
         : priceMsg.content;
 
     const ratingMsg = await ask("Rating (1–10)?", 30000);
-    if (!ratingMsg) return dm.send("Timed out.");
-
     const rating = parseInt(ratingMsg.content);
+
     if (isNaN(rating) || rating < 1 || rating > 10) {
       return dm.send("Invalid rating. Must be 1–10.");
     }
 
-    await dm.send("Upload images or type skip.");
+    await dm.send("Upload images now or type skip.");
+
     const imgMsg = await ask("Waiting for images...", 90000);
-    if (!imgMsg) return dm.send("Timed out.");
 
     let files = [];
     if (imgMsg.content.toLowerCase() !== "skip") {
-      files = imgMsg.attachments.map(att => att.url);
+      files = imgMsg.attachments.map(a => a.url);
     }
 
-    const reviewTextMsg = await ask("Write your review.", 120000);
-    if (!reviewTextMsg) return dm.send("Timed out.");
-    const review_text = reviewTextMsg.content;
+    const review_text = (await ask("Write your review.", 120000)).content;
 
-    if (!REVIEW_CHANNEL_ID) {
-      return dm.send("Review channel not configured.");
-    }
-
-    const reviewChannel = await client.channels
-      .fetch(REVIEW_CHANNEL_ID)
-      .catch(() => null);
-
-    if (!reviewChannel) {
-      return dm.send("Cannot find review channel.");
-    }
+    const reviewChannel = await client.channels.fetch(REVIEW_CHANNEL_ID);
 
     const stars = "⭐".repeat(rating);
 
-    const finalMessage = `# ${product_name}
+    const finalMessage =
+`# ${product_name}
 
 **Product - ${product}**
 **Price - ${price}**
 
-**Customer Review - ${stars} (${rating}/10)**
+*Customer Review - ${stars} (${rating}/10)*
 
-${review_text} - (${message.author.username})
+**${review_text} - (${message.author.username})**
 
-© Orion Development 2026. All rights reserved`;
+© Orion Development 2026`;
 
     await reviewChannel.send({
       content: finalMessage,
       files
     });
 
-    return dm.send("✅ Review submitted successfully.");
+    await dm.send("Review submitted.");
   } catch (err) {
-    console.error("review command error:", err);
-    return message.reply("❌ Review system error. Check logs.");
+    await message.author.send("Error: " + err.message).catch(() => {});
   }
 }
 
