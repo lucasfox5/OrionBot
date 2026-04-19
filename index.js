@@ -777,8 +777,8 @@ const MODMAIL_CHANNEL = "1466828764184051944";
 const LOG_CHANNEL = "1403467428255633428";
 const WELCOME_CHANNEL = "1443713535887806616";
 const COUNTING_CHANNEL = "1452063879776436297";
+const REVIEW_CHANNEL = "1450909512520175668";
 const PRODUCT_LOG_CHANNEL = "1375200039839858738";
-const REVIEW_CHANNEL_ID = process.env.REVIEW_CHANNEL_ID;
 // ----------------------------------------------------
 // LOG HELPER
 // ----------------------------------------------------
@@ -798,7 +798,7 @@ client.on("clientReady", () => {
 
   // ⭐ HEARTBEAT → Sends bot status to Railway every 5 seconds
   setInterval(() => {
-    axios.post("https://orionbot-production-699f.up.railway.app/status", {
+    axios.post("https://orionbot-production-b06c.up.railway.app/status", {
       ping: Math.floor(Math.random() * 100),
       uptime: process.uptime(),
       version: "1.0.0"
@@ -1067,42 +1067,58 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // ----------------------------------------------------
-  // !profile
-  // ----------------------------------------------------
-  if (cmd === "!profile") {
-    const raw = (args[1] || "").trim();
 
-    let targetUser = message.mentions.users.first() || null;
+// ----------------------------------------------------
+// !profile [@user | userId]
+// ----------------------------------------------------
+if (cmd === "!profile") {
+  const raw = (args[1] || "").trim();
 
-    if (!targetUser && raw && /^\d{15,20}$/.test(raw)) {
-      targetUser = await client.users.fetch(raw).catch(() => null);
-    }
+  // 1) Resolve target user
+  let targetUser = message.mentions.users.first() || null;
 
-    if (!targetUser) targetUser = message.author;
+  // If no mention, try ID
+  if (!targetUser && raw && /^\d{15,20}$/.test(raw)) {
+    targetUser = await client.users.fetch(raw).catch(() => null);
+  }
 
-    const discordId = String(targetUser.id).trim();
-    const link = await Link.findOne({ discordId }).lean();
-    const robloxUserId = link?.robloxUserId;
+  // If nothing provided, default to author
+  if (!targetUser) targetUser = message.author;
 
-    if (!robloxUserId) return message.reply("Not linked.");
+  const discordId = String(targetUser.id).trim();
+const link = await Link.findOne({ discordId }).lean();
+const robloxUserId = link?.robloxUserId;
 
-    let robloxName = "Unknown";
-    let headshotUrl = null;
+  if (!robloxUserId) {
+    return message.reply("Not linked.");
+  }
 
-    try {
-      robloxName = await getRobloxUsername(robloxUserId);
-      headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
-    } catch {}
+  // Fetch Roblox username + avatar
+  let robloxName = "Unknown";
+  let headshotUrl = null;
 
+  try {
+    robloxName = await getRobloxUsername(robloxUserId);
+    headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
+  } catch (e) {
+    console.error("Profile Roblox fetch error:", e);
+  }
+
+  // Owned products
+  let ownedIds = [];
+  try {
     const ownedRows = await Owned.find({ userId: String(robloxUserId) })
       .select("productId")
       .lean();
 
-    const ownedIds = ownedRows.map(r => String(r.productId));
+    ownedIds = ownedRows.map(r => String(r.productId));
+  } catch (e) {
+    console.error("Profile owned fetch error:", e);
+  }
 
-    let productLines = [];
-
+  // Build product list
+  let productLines = [];
+  try {
     if (ownedIds.length > 0) {
       const products = await Product.find({ _id: { $in: ownedIds } }).lean();
       const byId = new Map(products.map(p => [String(p._id), p]));
@@ -1112,106 +1128,28 @@ client.on("messageCreate", async (message) => {
         .filter(Boolean)
         .map(p => `• **${p.name || "Unnamed"}**`);
     }
-
-    const embed = new EmbedBuilder()
-      .setTitle("🧾 Profile")
-      .setColor(0x00ffea)
-      .addFields(
-        { name: "Discord", value: `<@${discordId}> (\`${discordId}\`)` },
-        { name: "Roblox", value: `**${robloxName}** (\`${robloxUserId}\`)` },
-        {
-          name: "Products",
-          value: productLines.length ? productLines.join("\n") : "*None*"
-        }
-      )
-      .setTimestamp();
-
-    if (headshotUrl) embed.setThumbnail(headshotUrl);
-
-    return message.reply({ embeds: [embed] });
+  } catch (e) {
+    console.error("Profile product fetch error:", e);
   }
 
-  // ----------------------------------------------------
-  // !review MUST go here too
-  // ----------------------------------------------------
-  if (cmd === "!review") {
-    try {
-      await message.delete().catch(() => {});
-
-      const dm = await message.author.createDM();
-
-      const ask = async (q, t = 60000) => {
-        await dm.send(q);
-
-        const collected = await dm.awaitMessages({
-          max: 1,
-          time: t,
-          filter: m => m.author.id === message.author.id
-        });
-
-        if (!collected.size) throw "Timed out";
-        return collected.first();
-      };
-
-      await dm.send("Let's create your review.");
-
-      const product_name = (await ask("Product name?")).content;
-
-      const productMsg = await ask("Product? (or skip)");
-      const product =
-        productMsg.content.toLowerCase() === "skip"
-          ? "Unknown"
-          : productMsg.content;
-
-      const priceMsg = await ask("Price? (or skip)");
-      const price =
-        priceMsg.content.toLowerCase() === "skip"
-          ? "Unknown"
-          : priceMsg.content;
-
-      const ratingMsg = await ask("Rating 1–10?");
-      const rating = parseInt(ratingMsg.content);
-
-      if (isNaN(rating) || rating < 1 || rating > 10) {
-        return dm.send("Invalid rating.");
+  const embed = new EmbedBuilder()
+    .setTitle("🧾 Profile")
+    .setColor(0x00ffea)
+    .addFields(
+      { name: "Discord", value: `<@${discordId}> (\`${discordId}\`)`, inline: false },
+      { name: "Roblox", value: `**${robloxName}** (\`${robloxUserId}\`)`, inline: false },
+      {
+        name: "🛒 Here are the products they own",
+        value: productLines.length ? productLines.join("\n") : "*No products owned yet.*",
+        inline: false
       }
+    )
+    .setTimestamp();
 
-      await dm.send("Upload images or type skip.");
-      const imgMsg = await ask("Images...", 90000);
+  if (headshotUrl) embed.setThumbnail(headshotUrl);
 
-      let files = [];
-      if (imgMsg.content.toLowerCase() !== "skip") {
-        files = imgMsg.attachments.map(a => a.url);
-      }
-
-      const review_text = (await ask("Write review.", 120000)).content;
-
-      const channel = await client.channels.fetch(REVIEW_CHANNEL_ID);
-
-      const stars = "⭐".repeat(rating);
-
-      const final =
-`# ${product_name}
-
-Product: ${product}
-Price: ${price}
-
-Rating: ${stars} (${rating}/10)
-
-${review_text} - ${message.author.username}`;
-
-      await channel.send({ content: final, files });
-
-      await dm.send("Sent.");
-    } catch (err) {
-      try {
-        await message.author.send("Error: " + err);
-      } catch {}
-    }
-  }
-
-}); // ✅ ONLY CLOSE HERE
-
+  return message.reply({ embeds: [embed] });
+}
   // ⭐ !Commands
   if (cmd === "!commands") {
     const embed = new EmbedBuilder()
@@ -1261,151 +1199,123 @@ ${review_text} - ${message.author.username}`;
     return message.reply({ embeds: [embed] });
   }
 
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+  // ⭐ !PVerify <6-digit-code>
+if (cmd === "!pverify") {
+  const code = (args[1] || "").trim();
 
-  if (!message.content.startsWith(PREFIX)) return;
+  if (!/^\d{6}$/.test(code)) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("❌ Invalid Code")
+          .setDescription("Use: `!pverify 123456` (6 digits).")
+          .setColor(0xff0000)
+      ]
+    });
+  }
 
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
+  try {
+    // 1) Find code
+const row = await VerifyCode.findOneAndDelete({ code }).lean();
 
-  // ⭐ !pverify
-  if (cmd === "pverify") {
-    const code = (args[0] || "").trim();
+if (!row) {
+  return message.reply("Invalid or expired code.");
+}
 
-    if (!/^\d{6}$/.test(code)) {
+    if (!row) {
       return message.reply({
         embeds: [
           new EmbedBuilder()
             .setTitle("❌ Invalid Code")
-            .setDescription("Use: `!pverify 123456` (6 digits).")
+            .setDescription("That code is invalid or expired.")
             .setColor(0xff0000)
         ]
       });
     }
 
-    try {
-      const row = await VerifyCode.findOneAndDelete({ code });
+    const robloxUserId = String(row.robloxUserId).trim();
+    const discordId = String(message.author.id).trim();
 
-      if (!row) {
-        return message.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle("❌ Invalid Code")
-              .setDescription("That code is invalid or expired.")
-              .setColor(0xff0000)
-          ]
-        });
-      }
+    // 2) Save link
+    await Link.findOneAndUpdate(
+      { robloxUserId },
+      { $set: { discordId } },
+      { upsert: true }
+    );
 
-      const robloxUserId = String(row.robloxUserId);
-      const discordId = message.author.id;
 
-      await Link.findOneAndUpdate(
-        { robloxUserId },
-        { $set: { discordId } },
-        { upsert: true }
-      );
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("✅ Verified & Linked")
+          .setDescription(
+            `Linked Roblox user **${robloxUserId}** to Discord user <@${discordId}>.\n` +
+            `Roblox can now see your Discord account.`
+          )
+          .setColor(0x00ff00)
+      ]
+    });
+  } catch (err) {
+    console.error("!pverify error:", err);
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("❌ Error")
+          .setDescription("Verification failed. Try again in a moment.")
+          .setColor(0xff0000)
+      ]
+    });
+  }
+}
 
+  // ⭐ !Review <text>
+  if (cmd === "!review") {
+    const reviewText = args.slice(1).join(" ");
+
+    if (!reviewText) {
       return message.reply({
         embeds: [
           new EmbedBuilder()
-            .setTitle("✅ Verified & Linked")
-            .setDescription(
-              `Linked Roblox **${robloxUserId}** to <@${discordId}>`
-            )
-            .setColor(0x00ff00)
+            .setTitle("❌ Missing Review")
+            .setDescription("Please type your review after the command.")
+            .setColor(0xff0000)
         ]
       });
-
-    } catch (err) {
-      console.error(err);
-      return message.reply("❌ Verification failed.");
     }
-  }
 
-});
-
-// ⭐ !review COMMAND
-if (cmd === "review") {
-  try {
-    await message.delete().catch(() => {});
-
-    const dm = await message.author.createDM();
-
-    const ask = async (question, timeout = 60000) => {
-      await dm.send(question);
-
-      const collected = await dm.awaitMessages({
-        max: 1,
-        time: timeout,
-        filter: m => m.author.id === message.author.id
+    const reviewChannel = message.guild.channels.cache.get(REVIEW_CHANNEL);
+    if (!reviewChannel) {
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("❌ Error")
+            .setDescription("Review channel not found.")
+            .setColor(0xff0000)
+        ]
       });
-
-      if (!collected.size) throw new Error("Timed out");
-      return collected.first();
-    };
-
-    await dm.send("Let's create your review.");
-
-    const product_name = (await ask("What is the product name?")).content;
-
-    const productMsg = await ask("Product? (or type skip)");
-    const product =
-      productMsg.content.toLowerCase() === "skip"
-        ? "Unknown"
-        : productMsg.content;
-
-    const priceMsg = await ask("Price? (or type skip)");
-    const price =
-      priceMsg.content.toLowerCase() === "skip"
-        ? "Unknown"
-        : priceMsg.content;
-
-    const ratingMsg = await ask("Rating (1–10)?", 30000);
-    const rating = parseInt(ratingMsg.content);
-
-    if (isNaN(rating) || rating < 1 || rating > 10) {
-      return dm.send("Invalid rating. Must be 1–10.");
     }
 
-    await dm.send("Upload images now or type skip.");
+    const embed = new EmbedBuilder()
+      .setTitle("⭐ New Review Submitted")
+      .setDescription(reviewText)
+      .addFields({ name: "From", value: `${message.author.tag}` })
+      .setColor(0x00ffea)
+      .setTimestamp()
+      .setThumbnail(message.author.displayAvatarURL());
 
-    const imgMsg = await ask("Waiting for images...", 90000);
+    reviewChannel.send({ embeds: [embed] });
 
-    let files = [];
-    if (imgMsg.content.toLowerCase() !== "skip") {
-      files = imgMsg.attachments.map(a => a.url);
-    }
-
-    const review_text = (await ask("Write your review.", 120000)).content;
-
-    const reviewChannel = await client.channels.fetch(REVIEW_CHANNEL_ID);
-
-    const stars = "⭐".repeat(rating);
-
-    const finalMessage =
-`# ${product_name}
-
-**Product - ${product}**
-**Price - ${price}**
-
-*Customer Review - ${stars} (${rating}/10)*
-
-**${review_text} - (${message.author.username})**
-
-© Orion Development 2026`;
-
-    await reviewChannel.send({
-      content: finalMessage,
-      files
+    message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("✅ Review Submitted")
+          .setDescription("Thank you for your feedback!")
+          .setColor(0x00ff00)
+      ]
     });
 
-    await dm.send("Review submitted.");
-  } catch (err) {
-    await message.author.send("Error: " + err.message).catch(() => {});
+    return;
   }
-}
 
   // ⭐ !Coinflip
   if (cmd === "!coinflip") {
@@ -1536,7 +1446,7 @@ const gate = `
 
 local HttpService = game:GetService("HttpService")
 
-local API = "https://orionbot-production-699f.up.railway.app"
+local API = "https://orionbot-production-b06c.up.railway.app"
 local PRODUCT_ID = "__PRODUCT_ID__"
 
 local CHECK_ENDPOINT = API .. "/whitelist/checkByProductId"
@@ -2162,7 +2072,7 @@ const hubMsg = await ask(
 
   try {
 const res = await axios.post(
-  "https://orionbot-production-699f.up.railway.app/addProduct",
+  "https://orionbot-production-b06c.up.railway.app/addProduct",
   {
     hub: hub,
     name: productName,
@@ -2215,7 +2125,7 @@ return message.reply("No permission.");
 }
   try {
     const res = await axios.post(
-      "https://orionbot-production-699f.up.railway.app/downtime",
+      "https://orionbot-production-b06c.up.railway.app/downtime",
       { enabled: true },
       { headers: { "x-admin-key": process.env.ADMIN_KEY } }
     );
@@ -2239,7 +2149,7 @@ if (cmd === "!undowntime") {
 }
   try {
     const res = await axios.post(
-      "https://orionbot-production-699f.up.railway.app/downtime",
+      "https://orionbot-production-b06c.up.railway.app/downtime",
       { enabled: false },
       { headers: { "x-admin-key": process.env.ADMIN_KEY } }
     );
@@ -2278,7 +2188,7 @@ if (cmd === "!removeproduct") {
   // Fetch current products from API
   let list = [];
   try {
-    const res = await axios.get("https://orionbot-production-699f.up.railway.app/products");
+    const res = await axios.get("https://orionbot-production-b06c.up.railway.app/products");
     list = res.data.products || [];
   } catch (err) {
     console.error("Fetch products error:", err);
@@ -2315,7 +2225,7 @@ if (cmd === "!removeproduct") {
   const productId = askIdMsg.first().content.trim();
 
   try {
-    const res = await axios.post("https://orionbot-production-699f.up.railway.app/removeProduct", {
+    const res = await axios.post("https://orionbot-production-b06c.up.railway.app/removeProduct", {
       productId
     });
 
@@ -2742,7 +2652,7 @@ if (cmd === "!editproduct") {
     const [title, description] = content.split("|").map(x => x.trim());
 
     try {
-      await axios.post("https://orionbot-production-699f.up.railway.app/announce", {
+      await axios.post("https://orionbot-production-b06c.up.railway.app/announce", {
         title,
         description
       });
