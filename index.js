@@ -1016,6 +1016,41 @@ if (field === "file") {
     });
   }
 });
+// ----------------------------------------------------
+// MODMAIL (DM → STAFF CHANNEL)
+// ----------------------------------------------------
+client.on("messageCreate", async (message) => {
+  if (message.guild) return;
+  if (message.author.bot) return;
+
+  try {
+    const channel = await client.channels.fetch(MODMAIL_CHANNEL);
+    if (!channel) return;
+
+    const embed = new EmbedBuilder()
+      .setTitle("📩 New Modmail Message")
+      .setDescription(message.content || "*No content*")
+      .addFields({ name: "From", value: `${message.author.tag} (${message.author.id})` })
+      .setColor(0x00aaff)
+      .setTimestamp();
+
+    channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("Modmail Error:", err);
+  }
+});
+
+// ----------------------------------------------------
+// GUILD MESSAGE HANDLER
+// ----------------------------------------------------
+client.on("messageCreate", async (message) => {
+  if (!message.guild) return;
+  if (message.author.bot) return;
+
+  const args = message.content.trim().split(/\s+/);
+  const cmd = args[0].toLowerCase();
+});
+
 client.on("messageCreate", async (message) => {
   if (!message.guild) return;
   if (message.author.bot) return;
@@ -1106,6 +1141,7 @@ client.on("messageCreate", async (message) => {
     return message.reply({ embeds: [embed] });
   }
 });
+
   // ⭐ !Commands
   if (cmd === "!commands") {
     const embed = new EmbedBuilder()
