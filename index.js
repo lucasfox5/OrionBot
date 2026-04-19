@@ -1049,14 +1049,6 @@ client.on("messageCreate", async (message) => {
 
   const args = message.content.trim().split(/\s+/);
   const cmd = args[0].toLowerCase();
-});
-
-client.on("messageCreate", async (message) => {
-  if (!message.guild) return;
-  if (message.author.bot) return;
-
-  const args = message.content.trim().split(/\s+/);
-  const cmd = args[0].toLowerCase();
 
   // ----------------------------------------------------
   // COUNTING SYSTEM
@@ -1101,15 +1093,13 @@ client.on("messageCreate", async (message) => {
     try {
       robloxName = await getRobloxUsername(robloxUserId);
       headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
-    } catch (e) {}
-
-    let ownedIds = [];
+    } catch {}
 
     const ownedRows = await Owned.find({ userId: String(robloxUserId) })
       .select("productId")
       .lean();
 
-    ownedIds = ownedRows.map(r => String(r.productId));
+    const ownedIds = ownedRows.map(r => String(r.productId));
 
     let productLines = [];
 
@@ -1140,7 +1130,87 @@ client.on("messageCreate", async (message) => {
 
     return message.reply({ embeds: [embed] });
   }
-});
+
+  // ----------------------------------------------------
+  // !review MUST go here too
+  // ----------------------------------------------------
+  if (cmd === "!review") {
+    try {
+      await message.delete().catch(() => {});
+
+      const dm = await message.author.createDM();
+
+      const ask = async (q, t = 60000) => {
+        await dm.send(q);
+
+        const collected = await dm.awaitMessages({
+          max: 1,
+          time: t,
+          filter: m => m.author.id === message.author.id
+        });
+
+        if (!collected.size) throw "Timed out";
+        return collected.first();
+      };
+
+      await dm.send("Let's create your review.");
+
+      const product_name = (await ask("Product name?")).content;
+
+      const productMsg = await ask("Product? (or skip)");
+      const product =
+        productMsg.content.toLowerCase() === "skip"
+          ? "Unknown"
+          : productMsg.content;
+
+      const priceMsg = await ask("Price? (or skip)");
+      const price =
+        priceMsg.content.toLowerCase() === "skip"
+          ? "Unknown"
+          : priceMsg.content;
+
+      const ratingMsg = await ask("Rating 1–10?");
+      const rating = parseInt(ratingMsg.content);
+
+      if (isNaN(rating) || rating < 1 || rating > 10) {
+        return dm.send("Invalid rating.");
+      }
+
+      await dm.send("Upload images or type skip.");
+      const imgMsg = await ask("Images...", 90000);
+
+      let files = [];
+      if (imgMsg.content.toLowerCase() !== "skip") {
+        files = imgMsg.attachments.map(a => a.url);
+      }
+
+      const review_text = (await ask("Write review.", 120000)).content;
+
+      const channel = await client.channels.fetch(REVIEW_CHANNEL_ID);
+
+      const stars = "⭐".repeat(rating);
+
+      const final =
+`# ${product_name}
+
+Product: ${product}
+Price: ${price}
+
+Rating: ${stars} (${rating}/10)
+
+${review_text} - ${message.author.username}`;
+
+      await channel.send({ content: final, files });
+
+      await dm.send("Sent.");
+    } catch (err) {
+      try {
+        await message.author.send("Error: " + err);
+      } catch {}
+    }
+  }
+
+}); // ✅ ONLY CLOSE HERE
 
   // ⭐ !Commands
   if (cmd === "!commands") {
@@ -1208,7 +1278,7 @@ if (cmd === "!pverify") {
 
   try {
     // 1) Find code
-const row = await VerifyCode.findOneAndDelete({ code }).lean();
+const row = await VerifyCode.findOneAndDelete({ code });
 
 if (!row) {
   return message.reply("Invalid or expired code.");
