@@ -1261,82 +1261,70 @@ ${review_text} - ${message.author.username}`;
     return message.reply({ embeds: [embed] });
   }
 
-  // ⭐ !PVerify <6-digit-code>
-if (cmd === "!pverify") {
-  const code = (args[1] || "").trim();
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
 
-  if (!/^\d{6}$/.test(code)) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("❌ Invalid Code")
-          .setDescription("Use: `!pverify 123456` (6 digits).")
-          .setColor(0xff0000)
-      ]
-    });
-  }
+  if (!message.content.startsWith(PREFIX)) return;
 
-  try {
-    // 1) Find code
-const row = await VerifyCode.findOneAndDelete({ code });
+  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const cmd = args.shift().toLowerCase();
 
-if (!row) {
-  return message.reply("Invalid or expired code.");
-}
+  // ⭐ !pverify
+  if (cmd === "pverify") {
+    const code = (args[0] || "").trim();
 
-    if (!row) {
+    if (!/^\d{6}$/.test(code)) {
       return message.reply({
         embeds: [
           new EmbedBuilder()
             .setTitle("❌ Invalid Code")
-            .setDescription("That code is invalid or expired.")
+            .setDescription("Use: `!pverify 123456` (6 digits).")
             .setColor(0xff0000)
         ]
       });
     }
 
-    const robloxUserId = String(row.robloxUserId).trim();
-    const discordId = String(message.author.id).trim();
+    try {
+      const row = await VerifyCode.findOneAndDelete({ code });
 
-    // 2) Save link
-    await Link.findOneAndUpdate(
-      { robloxUserId },
-      { $set: { discordId } },
-      { upsert: true }
-    );
+      if (!row) {
+        return message.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("❌ Invalid Code")
+              .setDescription("That code is invalid or expired.")
+              .setColor(0xff0000)
+          ]
+        });
+      }
 
+      const robloxUserId = String(row.robloxUserId);
+      const discordId = message.author.id;
 
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("✅ Verified & Linked")
-          .setDescription(
-            `Linked Roblox user **${robloxUserId}** to Discord user <@${discordId}>.\n` +
-            `Roblox can now see your Discord account.`
-          )
-          .setColor(0x00ff00)
-      ]
-    });
-  } catch (err) {
-    console.error("!pverify error:", err);
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("❌ Error")
-          .setDescription("Verification failed. Try again in a moment.")
-          .setColor(0xff0000)
-      ]
-    });
+      await Link.findOneAndUpdate(
+        { robloxUserId },
+        { $set: { discordId } },
+        { upsert: true }
+      );
+
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("✅ Verified & Linked")
+            .setDescription(
+              `Linked Roblox **${robloxUserId}** to <@${discordId}>`
+            )
+            .setColor(0x00ff00)
+        ]
+      });
+
+    } catch (err) {
+      console.error(err);
+      return message.reply("❌ Verification failed.");
+    }
   }
-}
 
-  
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
-    if (!message.content.startsWith(PREFIX)) return;
-
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
+});
 
 // ⭐ !review COMMAND
 if (cmd === "review") {
