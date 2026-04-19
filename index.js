@@ -1016,40 +1016,12 @@ if (field === "file") {
     });
   }
 });
-// ----------------------------------------------------
-// MODMAIL (DM → STAFF CHANNEL)
-// ----------------------------------------------------
-client.on("messageCreate", async (message) => {
-  if (message.guild) return;
-  if (message.author.bot) return;
-
-  try {
-    const channel = await client.channels.fetch(MODMAIL_CHANNEL);
-    if (!channel) return;
-
-    const embed = new EmbedBuilder()
-      .setTitle("📩 New Modmail Message")
-      .setDescription(message.content || "*No content*")
-      .addFields({ name: "From", value: `${message.author.tag} (${message.author.id})` })
-      .setColor(0x00aaff)
-      .setTimestamp();
-
-    channel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("Modmail Error:", err);
-  }
-});
-
-// ----------------------------------------------------
-// GUILD MESSAGE HANDLER
-// ----------------------------------------------------
 client.on("messageCreate", async (message) => {
   if (!message.guild) return;
   if (message.author.bot) return;
 
   const args = message.content.trim().split(/\s+/);
   const cmd = args[0].toLowerCase();
-});
 
   // ----------------------------------------------------
   // COUNTING SYSTEM
@@ -1068,58 +1040,44 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  // ----------------------------------------------------
+  // !profile
+  // ----------------------------------------------------
+  if (cmd === "!profile") {
+    const raw = (args[1] || "").trim();
 
-// ----------------------------------------------------
-// !profile [@user | userId]
-// ----------------------------------------------------
-if (cmd === "!profile") {
-  const raw = (args[1] || "").trim();
+    let targetUser = message.mentions.users.first() || null;
 
-  // 1) Resolve target user
-  let targetUser = message.mentions.users.first() || null;
+    if (!targetUser && raw && /^\d{15,20}$/.test(raw)) {
+      targetUser = await client.users.fetch(raw).catch(() => null);
+    }
 
-  // If no mention, try ID
-  if (!targetUser && raw && /^\d{15,20}$/.test(raw)) {
-    targetUser = await client.users.fetch(raw).catch(() => null);
-  }
+    if (!targetUser) targetUser = message.author;
 
-  // If nothing provided, default to author
-  if (!targetUser) targetUser = message.author;
+    const discordId = String(targetUser.id).trim();
+    const link = await Link.findOne({ discordId }).lean();
+    const robloxUserId = link?.robloxUserId;
 
-  const discordId = String(targetUser.id).trim();
-const link = await Link.findOne({ discordId }).lean();
-const robloxUserId = link?.robloxUserId;
+    if (!robloxUserId) return message.reply("Not linked.");
 
-  if (!robloxUserId) {
-    return message.reply("Not linked.");
-  }
+    let robloxName = "Unknown";
+    let headshotUrl = null;
 
-  // Fetch Roblox username + avatar
-  let robloxName = "Unknown";
-  let headshotUrl = null;
+    try {
+      robloxName = await getRobloxUsername(robloxUserId);
+      headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
+    } catch (e) {}
 
-  try {
-    robloxName = await getRobloxUsername(robloxUserId);
-    headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
-  } catch (e) {
-    console.error("Profile Roblox fetch error:", e);
-  }
+    let ownedIds = [];
 
-  // Owned products
-  let ownedIds = [];
-  try {
     const ownedRows = await Owned.find({ userId: String(robloxUserId) })
       .select("productId")
       .lean();
 
     ownedIds = ownedRows.map(r => String(r.productId));
-  } catch (e) {
-    console.error("Profile owned fetch error:", e);
-  }
 
-  // Build product list
-  let productLines = [];
-  try {
+    let productLines = [];
+
     if (ownedIds.length > 0) {
       const products = await Product.find({ _id: { $in: ownedIds } }).lean();
       const byId = new Map(products.map(p => [String(p._id), p]));
@@ -1129,28 +1087,25 @@ const robloxUserId = link?.robloxUserId;
         .filter(Boolean)
         .map(p => `• **${p.name || "Unnamed"}**`);
     }
-  } catch (e) {
-    console.error("Profile product fetch error:", e);
+
+    const embed = new EmbedBuilder()
+      .setTitle("🧾 Profile")
+      .setColor(0x00ffea)
+      .addFields(
+        { name: "Discord", value: `<@${discordId}> (\`${discordId}\`)` },
+        { name: "Roblox", value: `**${robloxName}** (\`${robloxUserId}\`)` },
+        {
+          name: "Products",
+          value: productLines.length ? productLines.join("\n") : "*None*"
+        }
+      )
+      .setTimestamp();
+
+    if (headshotUrl) embed.setThumbnail(headshotUrl);
+
+    return message.reply({ embeds: [embed] });
   }
-
-  const embed = new EmbedBuilder()
-    .setTitle("🧾 Profile")
-    .setColor(0x00ffea)
-    .addFields(
-      { name: "Discord", value: `<@${discordId}> (\`${discordId}\`)`, inline: false },
-      { name: "Roblox", value: `**${robloxName}** (\`${robloxUserId}\`)`, inline: false },
-      {
-        name: "🛒 Here are the products they own",
-        value: productLines.length ? productLines.join("\n") : "*No products owned yet.*",
-        inline: false
-      }
-    )
-    .setTimestamp();
-
-  if (headshotUrl) embed.setThumbnail(headshotUrl);
-
-  return message.reply({ embeds: [embed] });
-}
+});
   // ⭐ !Commands
   if (cmd === "!commands") {
     const embed = new EmbedBuilder()
