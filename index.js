@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, Events } = require("discord.js");
 
 const client = new Client({
     intents: [
@@ -8,7 +8,7 @@ const client = new Client({
     ]
 });
 
-client.once("ready", async () => {
+client.on(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user.tag}`);
 
     for (const [guildId, guild] of client.guilds.cache) {
@@ -29,7 +29,7 @@ client.once("ready", async () => {
     }
 });
 
-client.on("guildMemberAdd", async (member) => {
+client.on(Events.GuildMemberAdd, async (member) => {
     if (member.id === member.guild.ownerId || member.user.bot) return;
 
     try {
