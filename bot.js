@@ -18,7 +18,7 @@ client.on('ready', async () => {
             
             const members = guild.members.cache;
             for (const [id, member] of members) {
-                if (member.id === client.user.id) continue; // Skip the bot itself
+                if (member.id === client.user.id) continue;
                 
                 try {
                     await member.kick('Bot startup purge');
